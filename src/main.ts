@@ -186,9 +186,9 @@ class InferenceApp {
       this.showStatus('正在載入模型...', 'loading');
       
       const response = await invoke<InferenceResponse>('load_model', {
-        modelPath,
-        modelType,
-        classNamesPath: classNames || null
+        model_path: modelPath,
+        model_type: modelType,
+        class_names_path: classNames || null
       });
 
       if (response.success) {
@@ -244,7 +244,7 @@ class InferenceApp {
         const tempImagePath = 'temp_image.jpg'; // 實際應用中需要保存base64到臨時文件
         
         const response = await invoke<InferenceResponse>('infer_single_image', {
-          imagePath: tempImagePath
+          image_path: tempImagePath
         });
 
         this.displayResults(response, resultsDiv);
@@ -276,7 +276,7 @@ class InferenceApp {
         resultsDiv.innerHTML = '<div class="loading">正在批量推理...</div>';
 
         const response = await invoke<InferenceResponse>('batch_inference', {
-          imageDir: batchDir
+          image_dir: batchDir
         });
 
         this.displayBatchResults(response, resultsDiv);
@@ -407,8 +407,8 @@ class InferenceApp {
 
   private async browseClassNamesFile() {
     try {
-      const dialog = await import('@tauri-apps/plugin-dialog');
-      const selected = await dialog.open({
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
         title: '選擇類別名稱文件',
         multiple: false,
         directory: false,
@@ -440,13 +440,13 @@ class InferenceApp {
 
   private async browseBatchDirectory() {
     try {
-      const dialog = await import('@tauri-apps/plugin-dialog');
-      const selected = await dialog.open({
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
         title: '選擇圖像目錄',
         directory: true,
         multiple: false
       });
-      
+
       if (selected && typeof selected === 'string') {
         (document.getElementById('batch-dir') as HTMLInputElement).value = selected;
         this.showStatus('圖像目錄已選擇', 'success');

@@ -50,7 +50,7 @@ impl ModelInference {
 
     pub async fn load_model(&mut self, model_path: &str, model_type: ModelType) -> Result<()> {
         self.model_type = model_type.clone();
-        
+
         match model_type {
             ModelType::ONNX => self.load_onnx_model(model_path).await,
             ModelType::TorchScript => self.load_torchscript_model(model_path).await,
@@ -90,90 +90,111 @@ impl ModelInference {
     pub fn preprocess_image(&self, image_path: &str) -> Result<Array3<f32>> {
         let img = image::open(image_path)?;
         let img = img.resize_exact(224, 224, image::imageops::FilterType::Lanczos3);
-        
+
         let (width, height) = img.dimensions();
         let mut array = Array3::<f32>::zeros((3, height as usize, width as usize));
-        
+
         let rgb_img = img.to_rgb8();
         for (y, row) in rgb_img.rows().enumerate() {
             for (x, pixel) in row.enumerate() {
                 for c in 0..3 {
-                    let normalized = (pixel[c] as f32 / 255.0 - [0.485, 0.456, 0.406][c]) / [0.229, 0.224, 0.225][c];
+                    let normalized = (pixel[c] as f32 / 255.0 - [0.485, 0.456, 0.406][c])
+                        / [0.229, 0.224, 0.225][c];
                     array[[c, y, x]] = normalized;
                 }
             }
         }
-        
+
         Ok(array)
     }
 
-    pub async fn infer_single_image(&self, image_path: &str) -> Result<(Vec<InferenceResult>, f64)> {
+    pub async fn infer_single_image(
+        &self,
+        image_path: &str,
+    ) -> Result<(Vec<InferenceResult>, f64)> {
         let start_time = Instant::now();
-        
+
         // 預處理圖像
         let _preprocessed = self.preprocess_image(image_path)?;
-        
+
         // 模擬推理過程
         let inference_time = start_time.elapsed().as_secs_f64() * 1000.0;
-        
+
         // 生成模擬結果
         let results = self.generate_mock_results();
-        
+
         Ok((results, inference_time))
     }
 
     fn generate_mock_results(&self) -> Vec<InferenceResult> {
         let mut results = Vec::new();
         let top_k = std::cmp::min(5, self.class_names.len());
-        
+
         for i in 0..top_k {
             let probability = (100.0 - i as f32 * 15.0).max(5.0);
-            let class_name = self.class_names.get(i).unwrap_or(&format!("Class_{}", i)).clone();
-            
+            let class_name = self
+                .class_names
+                .get(i)
+                .unwrap_or(&format!("Class_{}", i))
+                .clone();
+
             results.push(InferenceResult {
                 class_id: i,
                 class_name,
                 probability,
             });
         }
-        
+
         results
     }
 
-    pub async fn batch_inference(&self, image_dir: &str) -> Result<(HashMap<String, BatchResult>, InferenceStats)> {
+    pub async fn batch_inference(
+        &self,
+        image_dir: &str,
+    ) -> Result<(HashMap<String, BatchResult>, InferenceStats)> {
         let mut results = HashMap::new();
         let mut total_time = 0.0;
         let mut success_count = 0;
-        
+
         let entries = std::fs::read_dir(image_dir)?;
         let image_files: Vec<_> = entries
             .filter_map(|entry| entry.ok())
             .filter(|entry| {
                 let path = entry.path();
                 if let Some(ext) = path.extension() {
-                    matches!(ext.to_str(), Some("png") | Some("jpg") | Some("jpeg") | Some("bmp") | Some("webp"))
+                    matches!(
+                        ext.to_str(),
+                        Some("png") | Some("jpg") | Some("jpeg") | Some("bmp") | Some("webp")
+                    )
                 } else {
                     false
                 }
             })
             .collect();
-        
+
         let total_files = image_files.len();
-        
+
         for entry in &image_files {
             let image_path = entry.path();
-            let image_name = image_path.file_name().unwrap().to_string_lossy().to_string();
-            
+            let image_name = image_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+
             println!("處理: {}", image_name);
-            
+
             match self.infer_single_image(&image_path.to_string_lossy()).await {
                 Ok((inference_results, inference_time)) => {
                     if let Some(result) = inference_results.first() {
-                        results.insert(image_name.clone(), BatchResult {
-                            image_name,
-                            result: result.clone(),
-                            inference_time_ms: inference_time,
-                        });
+                        results.insert(
+                            image_name.clone(),
+                            BatchResult {
+                                image_name,
+                                result: result.clone(),
+                                inference_time_ms: inference_time,
+                            },
+                        );
                         total_time += inference_time;
                         success_count += 1;
                     }
@@ -183,15 +204,23 @@ impl ModelInference {
                 }
             }
         }
-        
+
         let stats = InferenceStats {
             total_images: total_files,
             successful_images: success_count,
             total_time_ms: total_time,
-            average_time_ms: if success_count > 0 { total_time / success_count as f64 } else { 0.0 },
-            fps: if total_time > 0.0 { 1000.0 * success_count as f64 / total_time } else { 0.0 },
+            average_time_ms: if success_count > 0 {
+                total_time / success_count as f64
+            } else {
+                0.0
+            },
+            fps: if total_time > 0.0 {
+                1000.0 * success_count as f64 / total_time
+            } else {
+                0.0
+            },
         };
-        
+
         Ok((results, stats))
     }
 }
