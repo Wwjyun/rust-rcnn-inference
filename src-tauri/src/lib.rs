@@ -1,10 +1,10 @@
 mod inference;
 
-use inference::{ModelInference, ModelType, InferenceResult, BatchResult, InferenceStats};
+use inference::{BatchResult, InferenceResult, InferenceStats, ModelInference, ModelType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
 use tauri::State;
+use tokio::sync::Mutex;
 
 #[derive(Serialize, Deserialize)]
 pub struct InferenceRequest {
@@ -30,7 +30,7 @@ struct AppState {
 }
 
 #[tauri::command]
-fn load_model(
+async fn load_model(
     state: State<'_, AppState>,
     model_path: String,
     model_type: String,
@@ -39,72 +39,62 @@ fn load_model(
     let model_type_enum = match model_type.to_lowercase().as_str() {
         "torchscript" => ModelType::TorchScript,
         "onnx" => ModelType::ONNX,
-        _ => return Ok(InferenceResponse {
-            success: false,
-            message: "不支持的模型類型".to_string(),
-            results: None,
-            batch_results: None,
-            stats: None,
-        }),
-    };
-
-    let mut engine = state.inference_engine.lock().map_err(|e| e.to_string())?;
-    
-    // 使用 tokio::task::block_in_place 來處理異步操作
-    let result = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(async {
-            engine.load_model(&model_path, model_type_enum).await
-        })
-    });
-    
-    match result {
-        Ok(_) => {
-            if let Some(class_path) = class_names_path {
-                if let Err(e) = engine.load_class_names(Some(&class_path)) {
-                    return Ok(InferenceResponse {
-                        success: false,
-                        message: format!("載入類別名稱失敗: {}", e),
-                        results: None,
-                        batch_results: None,
-                        stats: None,
-                    });
-                }
-            } else {
-                engine.load_class_names(None).map_err(|e| e.to_string())?;
-            }
-            
-            Ok(InferenceResponse {
-                success: true,
-                message: "模型載入成功".to_string(),
+        _ => {
+            return Ok(InferenceResponse {
+                success: false,
+                message: "不支持的模型類型".to_string(),
                 results: None,
                 batch_results: None,
                 stats: None,
             })
         }
-        Err(e) => Ok(InferenceResponse {
+    };
+
+    let mut engine = state.inference_engine.lock().await;
+
+    if let Err(e) = engine.load_model(&model_path, model_type_enum).await {
+        return Ok(InferenceResponse {
             success: false,
             message: format!("載入模型失敗: {}", e),
             results: None,
             batch_results: None,
             stats: None,
-        }),
+        });
     }
+
+    let class_load_result = if let Some(class_path) = class_names_path.as_deref() {
+        engine.load_class_names(Some(class_path))
+    } else {
+        engine.load_class_names(None)
+    };
+
+    if let Err(e) = class_load_result {
+        return Ok(InferenceResponse {
+            success: false,
+            message: format!("載入類別名稱失敗: {}", e),
+            results: None,
+            batch_results: None,
+            stats: None,
+        });
+    }
+
+    Ok(InferenceResponse {
+        success: true,
+        message: "模型載入成功".to_string(),
+        results: None,
+        batch_results: None,
+        stats: None,
+    })
 }
 
 #[tauri::command]
-fn infer_single_image(
+async fn infer_single_image(
     state: State<'_, AppState>,
     image_path: String,
 ) -> Result<InferenceResponse, String> {
-    let engine = state.inference_engine.lock().map_err(|e| e.to_string())?;
-    
-    let result = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(async {
-            engine.infer_single_image(&image_path).await
-        })
-    });
-    
-    match result {
+    let engine = state.inference_engine.lock().await;
+
+    match engine.infer_single_image(&image_path).await {
         Ok((results, inference_time)) => {
             println!("推理時間: {:.2} 毫秒", inference_time);
             Ok(InferenceResponse {
@@ -126,19 +116,13 @@ fn infer_single_image(
 }
 
 #[tauri::command]
-fn batch_inference(
+async fn batch_inference(
     state: State<'_, AppState>,
     image_dir: String,
 ) -> Result<InferenceResponse, String> {
-    let engine = state.inference_engine.lock().map_err(|e| e.to_string())?;
-    
-    let result = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(async {
-            engine.batch_inference(&image_dir).await
-        })
-    });
-    
-    match result {
+    let engine = state.inference_engine.lock().await;
+
+    match engine.batch_inference(&image_dir).await {
         Ok((batch_results, stats)) => {
             println!("批量推理統計:");
             println!("處理的圖像數量: {}", stats.total_images);
@@ -146,7 +130,7 @@ fn batch_inference(
             println!("總推理時間: {:.2} 毫秒", stats.total_time_ms);
             println!("平均每張圖像推理時間: {:.2} 毫秒", stats.average_time_ms);
             println!("推理速度: {:.2} FPS", stats.fps);
-            
+
             Ok(InferenceResponse {
                 success: true,
                 message: "批量推理完成".to_string(),
