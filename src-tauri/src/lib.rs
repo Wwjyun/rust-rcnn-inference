@@ -32,9 +32,9 @@ struct AppState {
 #[tauri::command]
 async fn load_model(
     state: State<'_, AppState>,
-    model_path: String,
-    model_type: String,
-    class_names_path: Option<String>,
+    #[serde(rename = "modelPath", alias = "model_path")] model_path: String,
+    #[serde(rename = "modelType", alias = "model_type")] model_type: String,
+    #[serde(rename = "classNamesPath", alias = "class_names_path")] class_names_path: Option<String>,
 ) -> Result<InferenceResponse, String> {
     let model_type_enum = match model_type.to_lowercase().as_str() {
         "torchscript" => ModelType::TorchScript,
