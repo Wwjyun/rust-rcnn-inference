@@ -24,6 +24,32 @@ pub struct InferenceResponse {
     pub stats: Option<InferenceStats>,
 }
 
+#[derive(Deserialize)]
+struct LoadModelArgs {
+    #[serde(alias = "modelPath")]
+    model_path: String,
+    #[serde(alias = "modelType")]
+    model_type: String,
+    #[serde(alias = "classNamesPath")]
+    class_names_path: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum LoadModelPayload {
+    Direct(LoadModelArgs),
+    Wrapped { args: LoadModelArgs },
+}
+
+impl LoadModelPayload {
+    fn into_args(self) -> LoadModelArgs {
+        match self {
+            LoadModelPayload::Direct(args) => args,
+            LoadModelPayload::Wrapped { args } => args,
+        }
+    }
+}
+
 // 全局狀態管理
 struct AppState {
     inference_engine: Mutex<ModelInference>,
@@ -32,10 +58,16 @@ struct AppState {
 #[tauri::command]
 async fn load_model(
     state: State<'_, AppState>,
-    #[serde(rename = "modelPath", alias = "model_path")] model_path: String,
-    #[serde(rename = "modelType", alias = "model_type")] model_type: String,
-    #[serde(rename = "classNamesPath", alias = "class_names_path")] class_names_path: Option<String>,
+    payload: LoadModelPayload,
 ) -> Result<InferenceResponse, String> {
+    let LoadModelArgs {
+        model_path,
+        model_type,
+        class_names_path,
+    } = payload.into_args();
+
+    let class_names_path = class_names_path.filter(|path| !path.trim().is_empty());
+
     let model_type_enum = match model_type.to_lowercase().as_str() {
         "torchscript" => ModelType::TorchScript,
         "onnx" => ModelType::ONNX,
