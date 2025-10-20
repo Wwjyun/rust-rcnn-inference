@@ -186,9 +186,9 @@ class InferenceApp {
       this.showStatus('正在載入模型...', 'loading');
       
       const response = await invoke<InferenceResponse>('load_model', {
-        model_path: modelPath,
-        model_type: modelType,
-        class_names_path: classNames || null
+        modelPath,
+        modelType,
+        classNamesPath: classNames || null
       });
 
       if (response.success) {
